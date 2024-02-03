@@ -16,7 +16,9 @@ pub trait Database: Send + Sync {
 
     async fn get_user_by_topic(&self, topic: i64) -> Result<Option<UserEntity>>;
 
-    async fn insert(&self, entity: InsertUserEntity) -> Result<UserEntity>;
+    async fn insert_user(&self, entity: InsertUserEntity) -> Result<UserEntity>;
+
+    async fn update_user(&self, user: UserEntity) -> Result<()>;
 }
 
 #[derive(Deserialize, Debug)]

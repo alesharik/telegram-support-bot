@@ -10,6 +10,7 @@ serde_json = "1.0.111"
 config = { version = "0.14.0", features = ["toml"] }
 chrono = "0.4.26"
 async-trait = "0.1.77"
+sanitize_html = "0.8.0"
 
 diesel = { version = "2.1.0", features = ["postgres", "sqlite", "returning_clauses_for_sqlite_3_35"] }
 

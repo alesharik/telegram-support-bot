@@ -3,8 +3,8 @@ mod utils;
 use std::sync::Arc;
 use serde::Deserialize;
 use teloxide::prelude::*;
-use teloxide::types::{InputFile, MediaKind, MessageKind};
-use crate::database::{Database, InsertUserEntity};
+use teloxide::types::{InputFile, MediaKind, MessageId, MessageKind, ParseMode};
+use crate::database::{Database, InsertUserEntity, UserEntity};
 use crate::localization::{CommonMessages, LocalizationBundle};
 use crate::telegram::utils::MessageBuilder;
 
@@ -35,19 +35,45 @@ pub async fn run(config: TelegramConfig, db: Box<dyn Database + 'static>, loc: L
     Ok(())
 }
 
+async fn update_user_info_msg(bot: &Bot, user_msg: &Message, mut entity: UserEntity, cfg: TelegramConfig, db: Arc<Box<dyn Database>>, loc: Arc<LocalizationBundle>) -> Result<UserEntity, Box<dyn std::error::Error + Send + Sync>> {
+    let bot = bot.parse_mode(ParseMode::Html);
+    let header = loc.localize(user_msg.from().and_then(|u| u.language_code.clone()), CommonMessages::InfoHeader {
+        lang: user_msg.from().and_then(|u| u.language_code.clone()),
+        last_name: user_msg.chat.last_name().map(|s| s.to_string()),
+        first_name: user_msg.chat.first_name().map(|s| s.to_string()),
+        id: user_msg.chat.id.0,
+    });
+
+    if let Some(id) = entity.info_message {
+        bot.edit_message_text(ChatId(cfg.superchat), MessageId(id as i32), &header)
+            .await?;
+        Ok(entity)
+    } else {
+        let msg = bot.send_message(ChatId(cfg.superchat), &header).message_thread_id(entity.topic as i32).await?;
+        bot.pin_chat_message(ChatId(cfg.superchat), msg.id).await?;
+        entity.info_message = Some(msg.id.0 as i64);
+        db.update_user(entity.clone()).await?;
+        Ok(entity)
+    }
+}
+
 async fn user_msg(bot: Bot, msg: Message, cfg: TelegramConfig, db: Arc<Box<dyn Database>>, loc: Arc<LocalizationBundle>) -> HandlerResult {
     let user = match db.get_user_by_tg_id(UserId(msg.chat.id.0 as u64)).await? {
         None => {
             let name = format!("#T {} {}", msg.chat.first_name().unwrap_or(""), msg.chat.last_name().unwrap_or(""));
             let topic = bot.create_forum_topic(ChatId(cfg.superchat), name, 16766590, "").await?;
-            let entity = InsertUserEntity { telegram_id: msg.chat.id.0, topic: topic.message_thread_id as i64 };
-            let en = db.insert(entity).await?;
+            let entity = InsertUserEntity { telegram_id: msg.chat.id.0, topic: topic.message_thread_id as i64, info_message: None };
+            let en = db.insert_user(entity).await?;
             bot.edit_forum_topic(ChatId(cfg.superchat), topic.message_thread_id)
                 .name(format!("#T{:#06} {} {}", en.id, msg.chat.first_name().unwrap_or(""), msg.chat.last_name().unwrap_or("")))
                 .await?;
-            en
+            update_user_info_msg(&bot, &msg, en, cfg.clone(), db.clone(), loc.clone()).await?
         }
-        Some(user) => user,
+        Some(user) => if user.info_message.is_none() {
+            update_user_info_msg(&bot, &msg, user, cfg.clone(), db.clone(), loc.clone()).await?
+        } else {
+            user
+        },
     };
     match msg.kind {
         MessageKind::Common(ref a) => match a.media_kind.clone() {

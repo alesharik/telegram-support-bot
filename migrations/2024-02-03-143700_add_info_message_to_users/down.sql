@@ -1,0 +1,1 @@
+alter table users drop column info_message;

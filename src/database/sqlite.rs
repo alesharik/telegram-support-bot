@@ -40,10 +40,18 @@ impl super::Database for SqliteDatabase {
             .optional()?)
     }
 
-    async fn insert(&self, entity: InsertUserEntity) -> super::Result<UserEntity> {
+    async fn insert_user(&self, entity: InsertUserEntity) -> super::Result<UserEntity> {
         let mut conn = self.conn.lock().await;
         Ok(diesel::insert_into(users::table())
             .values(&entity)
             .get_result(&mut *conn)?)
+    }
+
+    async fn update_user(&self, user: UserEntity) -> crate::database::Result<()> {
+        let mut conn = self.conn.lock().await;
+        diesel::update(users::table())
+            .set(user)
+            .execute(&mut *conn)?;
+        Ok(())
     }
 }

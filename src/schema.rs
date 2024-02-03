@@ -5,5 +5,6 @@ diesel::table! {
         id -> Integer,
         telegram_id -> BigInt,
         topic -> BigInt,
+        info_message -> Nullable<BigInt>,
     }
 }
