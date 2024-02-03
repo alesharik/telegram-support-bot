@@ -6,7 +6,7 @@ use tracing::info;
 
 mod sqlite;
 mod entities;
-pub use entities::{UserEntity, InsertUserEntity, InsertMessageEntity, MessageType, MessageEntity};
+pub use entities::{UserEntity, InsertUserEntity, InsertMessageEntity, MessageType, MessageEntity, InsertNoteEntity, NoteEntity};
 
 type Result<T> = std::result::Result<T, Box<dyn Error + Send + Sync>>;
 
@@ -21,6 +21,12 @@ pub trait Database: Send + Sync {
     async fn update_user(&self, user: UserEntity) -> Result<()>;
 
     async fn insert_message(&self, message: InsertMessageEntity) -> Result<MessageEntity>;
+
+    async fn save_note(&self, note: InsertNoteEntity) -> Result<NoteEntity>;
+
+    async fn get_notes(&self, user: &UserEntity) -> Result<Vec<NoteEntity>>;
+
+    async fn delete_note(&self, user: &UserEntity, note_key: &str) -> Result<()>;
 }
 
 #[derive(Deserialize, Debug)]

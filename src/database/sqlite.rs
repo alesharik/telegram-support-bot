@@ -4,10 +4,12 @@ use diesel::associations::HasTable;
 use teloxide::prelude::UserId;
 use tokio::sync::Mutex;
 use diesel::ExpressionMethods;
+use crate::database::entities::{InsertNoteEntity, NoteEntity};
 use super::{InsertMessageEntity, InsertUserEntity, MessageEntity, UserEntity};
 use crate::schema::users::dsl::users;
 use crate::schema::users::{telegram_id, topic};
 use crate::schema::messages::dsl::messages;
+use crate::schema::notes::dsl::notes;
 
 pub struct SqliteDatabase {
     conn: Mutex<SqliteConnection>,
@@ -61,5 +63,50 @@ impl super::Database for SqliteDatabase {
         Ok(diesel::insert_into(messages::table())
             .values(&message)
             .get_result(&mut *conn)?)
+    }
+
+    async fn save_note(&self, note: InsertNoteEntity) -> crate::database::Result<NoteEntity> {
+        use crate::schema::notes::{user_id, key};
+
+        let mut conn = self.conn.lock().await;
+        let existing: Option<NoteEntity> = notes.select(NoteEntity::as_select())
+            .filter(user_id.eq(note.user_id))
+            .filter(key.eq(&note.key))
+            .first(&mut *conn)
+            .optional()?;
+        Ok(match existing {
+            None => {
+                diesel::insert_into(notes::table())
+                    .values(&note)
+                    .get_result(&mut *conn)?
+            }
+            Some(mut entity) => {
+                entity.value = note.value;
+                diesel::update(notes::table())
+                    .set(entity.clone())
+                    .execute(&mut *conn)?;
+                entity
+            }
+        })
+    }
+
+    async fn get_notes(&self, user: &UserEntity) -> crate::database::Result<Vec<NoteEntity>> {
+        use crate::schema::notes::user_id;
+
+        let mut conn = self.conn.lock().await;
+        Ok(notes.select(NoteEntity::as_select())
+            .filter(user_id.eq(user.id))
+            .get_results(&mut *conn)?)
+    }
+
+    async fn delete_note(&self, user: &UserEntity, note_key: &str) -> crate::database::Result<()> {
+        use crate::schema::notes::{user_id, key};
+
+        let mut conn = self.conn.lock().await;
+        diesel::delete(notes::table())
+            .filter(user_id.eq(user.id))
+            .filter(key.eq(note_key))
+            .execute(&mut *conn)?;
+        Ok(())
     }
 }

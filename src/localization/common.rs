@@ -1,5 +1,5 @@
 use tracing::warn;
-use crate::localization::LocKey;
+use crate::localization::{LocKey, sanitize};
 
 #[derive(Clone)]
 pub enum CommonMessages {
@@ -53,16 +53,6 @@ impl LocKey for CommonMessages {
                 ("last_name".to_string(), sanitize(last_name.unwrap_or_default())),
                 ("lang".to_string(), sanitize(lang.unwrap_or_default())),
             ])
-        }
-    }
-}
-
-fn sanitize(s: String) -> String {
-    match sanitize_html::sanitize_str(&sanitize_html::rules::predefined::DEFAULT, &s) {
-        Ok(data) => data,
-        Err(e) => {
-            warn!("Failed to sanitize string {}: {:?}", s, e);
-            String::new()
         }
     }
 }

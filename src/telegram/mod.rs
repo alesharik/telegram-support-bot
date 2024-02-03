@@ -4,9 +4,9 @@ use std::sync::Arc;
 use serde::Deserialize;
 use teloxide::macros::BotCommands;
 use teloxide::prelude::*;
-use teloxide::types::{BotCommandScope, InputFile, MediaKind, MessageId, MessageKind, ParseMode};
-use crate::database::{Database, InsertMessageEntity, InsertUserEntity, UserEntity};
-use crate::localization::{CommonMessages, LocalizationBundle};
+use teloxide::types::{BotCommandScope, InputFile, MediaKind, MessageId, MessageKind, ParseMode, Recipient};
+use crate::database::{Database, InsertMessageEntity, InsertNoteEntity, InsertUserEntity, UserEntity};
+use crate::localization::{CommonMessages, LocalizationBundle, sanitize};
 use crate::telegram::utils::MessageBuilder;
 
 #[derive(Deserialize, Debug, Clone)]
@@ -30,24 +30,40 @@ enum UserCommand {
     Faq,
 }
 
+#[derive(BotCommands, Clone)]
+#[command(rename_rule = "lowercase", description = "These commands are supported:")]
+enum SupportCommand {
+    #[command(description = "Set note for user", parse_with = "split")]
+    Setnote { key: String, value: String },
+    #[command(description = "Get all notes for user")]
+    Notes,
+    #[command(description = "Delete note")]
+    Delnote { key: String },
+}
 
 pub async fn run(config: TelegramConfig, db: Box<dyn Database + 'static>, loc: LocalizationBundle) -> anyhow::Result<()> {
     use teloxide::utils::command::BotCommands;
 
     let bot = Bot::new(config.token.clone());
 
+    let superchat = ChatId(config.superchat);
+
     bot.set_my_commands(UserCommand::bot_commands())
         .scope(BotCommandScope::AllPrivateChats)
         .await?;
+    bot.set_my_commands(SupportCommand::bot_commands())
+        .scope(BotCommandScope::Chat { chat_id: Recipient::Id(superchat) })
+        .await?;
 
-    let superchat = ChatId(config.superchat);
     Dispatcher::builder(
         bot,
         Update::filter_message()
             .branch(dptree::filter(|m: Message| { m.chat.is_private() })
                 .branch(Update::filter_message().filter_command::<UserCommand>().endpoint(user_cmd))
                 .branch(Update::filter_message()).endpoint(user_msg))
-            .branch(dptree::filter(move |m: Message| { m.chat.id == superchat }).endpoint(superchat_msg))
+            .branch(dptree::filter(move |m: Message| { m.chat.id == superchat })
+                .branch(Update::filter_message().filter_command::<SupportCommand>().endpoint(superchat_cmd))
+                .branch(Update::filter_message()).endpoint(superchat_msg))
     )
         .dependencies(dptree::deps![config, Arc::new(db), Arc::new(loc)])
         .enable_ctrlc_handler()
@@ -57,21 +73,24 @@ pub async fn run(config: TelegramConfig, db: Box<dyn Database + 'static>, loc: L
     Ok(())
 }
 
-async fn update_user_info_msg(bot: &Bot, user_msg: &Message, mut entity: UserEntity, cfg: TelegramConfig, db: Arc<Box<dyn Database>>, loc: Arc<LocalizationBundle>) -> Result<UserEntity, Box<dyn std::error::Error + Send + Sync>> {
+async fn update_user_info_msg(bot: &Bot, mut entity: UserEntity, cfg: TelegramConfig, db: Arc<Box<dyn Database>>, loc: Arc<LocalizationBundle>) -> Result<UserEntity, Box<dyn std::error::Error + Send + Sync>> {
     let bot = bot.parse_mode(ParseMode::Html);
-    let header = loc.localize(None, CommonMessages::InfoHeader {
-        lang: user_msg.from().and_then(|u| u.language_code.clone()),
-        last_name: user_msg.chat.last_name().map(|s| s.to_string()),
-        first_name: user_msg.chat.first_name().map(|s| s.to_string()),
-        id: user_msg.chat.id.0,
+    let mut msg = loc.localize(None, CommonMessages::InfoHeader {
+        lang: entity.lang_code.clone(),
+        last_name: entity.last_name.clone().map(|s| s.to_string()),
+        first_name: entity.first_name.clone().map(|s| s.to_string()),
+        id: entity.telegram_id,
     });
+    for note in db.get_notes(&entity).await? {
+        msg = format!("{}<b>{}: </b><code>{}</code>\n", msg, sanitize(note.key), sanitize(note.value));
+    }
 
     if let Some(id) = entity.info_message {
-        bot.edit_message_text(ChatId(cfg.superchat), MessageId(id as i32), &header)
+        bot.edit_message_text(ChatId(cfg.superchat), MessageId(id as i32), &msg)
             .await?;
         Ok(entity)
     } else {
-        let msg = bot.send_message(ChatId(cfg.superchat), &header).message_thread_id(entity.topic as i32).await?;
+        let msg = bot.send_message(ChatId(cfg.superchat), &msg).message_thread_id(entity.topic as i32).await?;
         bot.pin_chat_message(ChatId(cfg.superchat), msg.id).await?;
         entity.info_message = Some(msg.id.0 as i64);
         db.update_user(entity.clone()).await?;
@@ -91,20 +110,65 @@ async fn user_cmd(bot: Bot, msg: Message, loc: Arc<LocalizationBundle>, cmd: Use
     Ok(())
 }
 
+async fn superchat_cmd(bot: Bot, msg: Message, loc: Arc<LocalizationBundle>, cfg: TelegramConfig, db: Arc<Box<dyn Database>>, cmd: SupportCommand) -> HandlerResult {
+    let Some(topic) = msg.thread_id else {
+        return Ok(());
+    };
+    let Some(user) = db.get_user_by_topic(topic as i64).await? else {
+        return Ok(());
+    };
+
+    match cmd {
+        SupportCommand::Setnote { key, value } => {
+            db.save_note(InsertNoteEntity { user_id: user.id, key: key.trim().to_string(), value: value.trim().to_string() }).await?;
+            update_user_info_msg(&bot, user, cfg.clone(), db.clone(), loc.clone()).await?;
+            bot.send_message(ChatId(cfg.superchat), "Note saved")
+                .message_thread_id(topic)
+                .await?;
+        }
+        SupportCommand::Delnote { key } => {
+            db.delete_note(&user, key.trim()).await?;
+            update_user_info_msg(&bot, user, cfg.clone(), db.clone(), loc.clone()).await?;
+            bot.parse_mode(ParseMode::Html)
+                .send_message(ChatId(cfg.superchat), "Note deleted")
+                .message_thread_id(topic)
+                .await?;
+        }
+        SupportCommand::Notes => {
+            let mut msg = "User notes:\n".to_string();
+            for note in db.get_notes(&user).await? {
+                msg = format!("{}\n<b>{}:</b> <code>{}</code>", msg, note.key, note.value);
+            }
+            bot.parse_mode(ParseMode::Html)
+                .send_message(ChatId(cfg.superchat), msg)
+                .message_thread_id(topic)
+                .await?;
+        }
+    };
+    Ok(())
+}
+
 async fn user_msg(bot: Bot, msg: Message, cfg: TelegramConfig, db: Arc<Box<dyn Database>>, loc: Arc<LocalizationBundle>) -> HandlerResult {
     let user = match db.get_user_by_tg_id(UserId(msg.chat.id.0 as u64)).await? {
         None => {
             let name = format!("#T {} {}", msg.chat.first_name().unwrap_or(""), msg.chat.last_name().unwrap_or(""));
             let topic = bot.create_forum_topic(ChatId(cfg.superchat), name, 16766590, "").await?;
-            let entity = InsertUserEntity { telegram_id: msg.chat.id.0, topic: topic.message_thread_id as i64, info_message: None };
+            let entity = InsertUserEntity {
+                telegram_id: msg.chat.id.0,
+                topic: topic.message_thread_id as i64,
+                info_message: None,
+                first_name: msg.chat.first_name().map(|s| s.to_string()),
+                last_name: msg.chat.last_name().map(|s| s.to_string()),
+                lang_code: msg.from().and_then(|l| l.language_code.clone()),
+            };
             let en = db.insert_user(entity).await?;
             bot.edit_forum_topic(ChatId(cfg.superchat), topic.message_thread_id)
                 .name(format!("#T{:#06} {} {}", en.id, msg.chat.first_name().unwrap_or(""), msg.chat.last_name().unwrap_or("")))
                 .await?;
-            update_user_info_msg(&bot, &msg, en, cfg.clone(), db.clone(), loc.clone()).await?
+            update_user_info_msg(&bot, en, cfg.clone(), db.clone(), loc.clone()).await?
         }
         Some(user) => if user.info_message.is_none() {
-            update_user_info_msg(&bot, &msg, user, cfg.clone(), db.clone(), loc.clone()).await?
+            update_user_info_msg(&bot, user, cfg.clone(), db.clone(), loc.clone()).await?
         } else {
             user
         },
