@@ -4,7 +4,7 @@ use diesel::associations::HasTable;
 use teloxide::prelude::UserId;
 use tokio::sync::Mutex;
 use diesel::ExpressionMethods;
-use super::UserEntity;
+use super::{InsertUserEntity, UserEntity};
 use crate::schema::users::dsl::users;
 use crate::schema::users::{telegram_id, topic};
 
@@ -40,11 +40,10 @@ impl super::Database for SqliteDatabase {
             .optional()?)
     }
 
-    async fn insert(&self, entity: UserEntity) -> super::Result<()> {
+    async fn insert(&self, entity: InsertUserEntity) -> super::Result<UserEntity> {
         let mut conn = self.conn.lock().await;
-        diesel::insert_into(users::table())
+        Ok(diesel::insert_into(users::table())
             .values(&entity)
-            .execute(&mut *conn)?;
-        Ok(())
+            .get_result(&mut *conn)?)
     }
 }

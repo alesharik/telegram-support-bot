@@ -1,7 +1,8 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
-    users (telegram_id) {
+    users (id) {
+        id -> Integer,
         telegram_id -> BigInt,
         topic -> BigInt,
     }

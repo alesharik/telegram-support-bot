@@ -4,7 +4,7 @@ use std::sync::Arc;
 use serde::Deserialize;
 use teloxide::prelude::*;
 use teloxide::types::{InputFile, MediaKind, MessageKind};
-use crate::database::{Database, UserEntity};
+use crate::database::{Database, InsertUserEntity, UserEntity};
 use crate::localization::{CommonMessages, LocalizationBundle};
 use crate::telegram::utils::MessageBuilder;
 
@@ -40,9 +40,12 @@ async fn user_msg(bot: Bot, msg: Message, cfg: TelegramConfig, db: Arc<Box<dyn D
         None => {
             let name = format!("#T {} {}", msg.chat.first_name().unwrap_or(""), msg.chat.last_name().unwrap_or(""));
             let topic = bot.create_forum_topic(ChatId(cfg.superchat), name, 16766590, "").await?;
-            let entity = UserEntity { telegram_id: msg.chat.id.0, topic: topic.message_thread_id as i64 };
-            db.insert(entity.clone()).await?;
-            entity
+            let entity = InsertUserEntity { telegram_id: msg.chat.id.0, topic: topic.message_thread_id as i64 };
+            let en = db.insert(entity).await?;
+            bot.edit_forum_topic(ChatId(cfg.superchat), topic.message_thread_id)
+                .name(format!("#T{:#06} {} {}", en.id, msg.chat.first_name().unwrap_or(""), msg.chat.last_name().unwrap_or("")))
+                .await?;
+            en
         }
         Some(user) => user,
     };

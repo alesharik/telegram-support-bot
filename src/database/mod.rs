@@ -6,7 +6,7 @@ use tracing::info;
 
 mod sqlite;
 mod entities;
-pub use entities::UserEntity;
+pub use entities::{UserEntity, InsertUserEntity};
 
 type Result<T> = std::result::Result<T, Box<dyn Error + Send + Sync>>;
 
@@ -16,7 +16,7 @@ pub trait Database: Send + Sync {
 
     async fn get_user_by_topic(&self, topic: i64) -> Result<Option<UserEntity>>;
 
-    async fn insert(&self, entity: UserEntity) -> Result<()>;
+    async fn insert(&self, entity: InsertUserEntity) -> Result<UserEntity>;
 }
 
 #[derive(Deserialize, Debug)]
