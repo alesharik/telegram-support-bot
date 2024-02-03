@@ -5,7 +5,7 @@ use serde::Deserialize;
 use teloxide::macros::BotCommands;
 use teloxide::prelude::*;
 use teloxide::types::{BotCommandScope, InputFile, MediaKind, MessageId, MessageKind, ParseMode, Recipient};
-use crate::database::{Database, InsertMessageEntity, InsertNoteEntity, InsertUserEntity, UserEntity};
+use crate::database::{Database, InsertMessageEntity, InsertNoteEntity, InsertUserEntity, MessageType, UserEntity};
 use crate::localization::{CommonMessages, LocalizationBundle, sanitize};
 use crate::telegram::utils::MessageBuilder;
 
@@ -57,13 +57,21 @@ pub async fn run(config: TelegramConfig, db: Box<dyn Database + 'static>, loc: L
 
     Dispatcher::builder(
         bot,
-        Update::filter_message()
-            .branch(dptree::filter(|m: Message| { m.chat.is_private() })
-                .branch(Update::filter_message().filter_command::<UserCommand>().endpoint(user_cmd))
-                .branch(Update::filter_message()).endpoint(user_msg))
-            .branch(dptree::filter(move |m: Message| { m.chat.id == superchat })
-                .branch(Update::filter_message().filter_command::<SupportCommand>().endpoint(superchat_cmd))
-                .branch(Update::filter_message()).endpoint(superchat_msg))
+        dptree::entry()
+            .branch(Update::filter_message()
+                .branch(dptree::filter(|m: Message| { m.chat.is_private() })
+                    .branch(Update::filter_message().filter_command::<UserCommand>().endpoint(user_cmd))
+                    .branch(Update::filter_message()).endpoint(user_msg))
+                .branch(dptree::filter(move |m: Message| { m.chat.id == superchat })
+                    .branch(Update::filter_message().filter_command::<SupportCommand>().endpoint(superchat_cmd))
+                    .branch(Update::filter_message()).endpoint(superchat_msg)))
+            .branch(Update::filter_edited_message()
+                .branch(dptree::filter(|m: Message| { m.chat.is_private() })
+                    .branch(Update::filter_message().filter_command::<UserCommand>().endpoint(noop))
+                    .branch(Update::filter_message()).endpoint(user_update))
+                .branch(dptree::filter(move |m: Message| { m.chat.id == superchat })
+                    .branch(Update::filter_message().filter_command::<SupportCommand>().endpoint(noop))
+                    .branch(Update::filter_message()).endpoint(superchat_update)))
     )
         .dependencies(dptree::deps![config, Arc::new(db), Arc::new(loc)])
         .enable_ctrlc_handler()
@@ -73,6 +81,9 @@ pub async fn run(config: TelegramConfig, db: Box<dyn Database + 'static>, loc: L
     Ok(())
 }
 
+async fn noop() -> HandlerResult {
+    Ok(())
+}
 async fn update_user_info_msg(bot: &Bot, mut entity: UserEntity, cfg: TelegramConfig, db: Arc<Box<dyn Database>>, loc: Arc<LocalizationBundle>) -> Result<UserEntity, Box<dyn std::error::Error + Send + Sync>> {
     let bot = bot.parse_mode(ParseMode::Html);
     let mut msg = loc.localize(None, CommonMessages::InfoHeader {
@@ -395,5 +406,67 @@ async fn superchat_msg(bot: Bot, msg: Message, db: Arc<Box<dyn Database>>, loc: 
         _ => return Ok(())
     };
     db.insert_message(InsertMessageEntity::outgoing(&user, &msg, tx.id)).await?;
+    Ok(())
+}
+
+async fn user_update(bot: Bot, edited: Message, cfg: TelegramConfig, db: Arc<Box<dyn Database>>, loc: Arc<LocalizationBundle>) -> HandlerResult {
+    let Some(user) = db.get_user_by_tg_id(UserId(edited.chat.id.0 as u64)).await? else {
+        return Ok(())
+    };
+    let Some(msg) = db.get_message(&user, MessageType::Incoming, edited.id.0 as i64).await? else {
+        return user_msg(bot, edited, cfg, db, loc).await;
+    };
+    let mid = MessageId(msg.tx_msg_id as i32);
+    let original = msg.rx_message()?;
+    if original.caption() != edited.caption() || original.caption_entities() != edited.caption_entities() {
+        MessageBuilder::new(bot.edit_message_caption(ChatId(cfg.superchat), mid))
+            .with(edited.caption(), |c, v| v.caption(c))
+            .with(edited.caption_entities(), |c, v| v.caption_entities(c.iter().cloned().collect::<Vec<_>>()))
+            .build()
+            .await?;
+    }
+    if original.text() != edited.text() {
+        if let Some(text) = edited.text() {
+            bot.edit_message_text(ChatId(cfg.superchat), mid, text).await?;
+        }
+    }
+    if original.location() != edited.location() {
+        if let Some(location) = edited.location() {
+            bot.edit_message_live_location(ChatId(cfg.superchat), mid, location.latitude, location.longitude).await?;
+        }
+    }
+    Ok(())
+}
+
+async fn superchat_update(bot: Bot, edited: Message, db: Arc<Box<dyn Database>>, loc: Arc<LocalizationBundle>) -> HandlerResult {
+    let Some(topic) = edited.thread_id else {
+        return Ok(());
+    };
+    let Some(user) = db.get_user_by_topic(topic as i64).await? else {
+        return Ok(());
+    };
+    let Some(msg) = db.get_message(&user, MessageType::Outgoing, edited.id.0 as i64).await? else {
+        return superchat_msg(bot, edited, db, loc).await;
+    };
+    let mid = MessageId(msg.tx_msg_id as i32);
+    let uid = UserId(user.telegram_id as u64);
+    let original = msg.rx_message()?;
+    if original.caption() != edited.caption() || original.caption_entities() != edited.caption_entities() {
+        MessageBuilder::new(bot.edit_message_caption(uid, mid))
+            .with(edited.caption(), |c, v| v.caption(c))
+            .with(edited.caption_entities(), |c, v| v.caption_entities(c.iter().cloned().collect::<Vec<_>>()))
+            .build()
+            .await?;
+    }
+    if original.text() != edited.text() {
+        if let Some(text) = edited.text() {
+            bot.edit_message_text(uid, mid, text).await?;
+        }
+    }
+    if original.location() != edited.location() {
+        if let Some(location) = edited.location() {
+            bot.edit_message_live_location(uid, mid, location.latitude, location.longitude).await?;
+        }
+    }
     Ok(())
 }

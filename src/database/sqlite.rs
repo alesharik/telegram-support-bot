@@ -5,7 +5,7 @@ use teloxide::prelude::UserId;
 use tokio::sync::Mutex;
 use diesel::ExpressionMethods;
 use crate::database::entities::{InsertNoteEntity, NoteEntity};
-use super::{InsertMessageEntity, InsertUserEntity, MessageEntity, UserEntity};
+use super::{InsertMessageEntity, InsertUserEntity, MessageEntity, MessageType, UserEntity};
 use crate::schema::users::dsl::users;
 use crate::schema::users::{telegram_id, topic};
 use crate::schema::messages::dsl::messages;
@@ -63,6 +63,18 @@ impl super::Database for SqliteDatabase {
         Ok(diesel::insert_into(messages::table())
             .values(&message)
             .get_result(&mut *conn)?)
+    }
+
+    async fn get_message(&self, user: &UserEntity, typ: MessageType, rx_id: i64) -> crate::database::Result<Option<MessageEntity>> {
+        use crate::schema::messages::{user_id, type_, rx_msg_id};
+
+        let mut conn = self.conn.lock().await;
+        Ok(messages.select(MessageEntity::as_select())
+            .filter(user_id.eq(user.id))
+            .filter(type_.eq(typ as i16))
+            .filter(rx_msg_id.eq(rx_id))
+            .first(&mut *conn)
+            .optional()?)
     }
 
     async fn save_note(&self, note: InsertNoteEntity) -> crate::database::Result<NoteEntity> {

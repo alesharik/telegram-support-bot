@@ -22,6 +22,8 @@ pub trait Database: Send + Sync {
 
     async fn insert_message(&self, message: InsertMessageEntity) -> Result<MessageEntity>;
 
+    async fn get_message(&self, user: &UserEntity, typ: MessageType, rx_id: i64) -> Result<Option<MessageEntity>>;
+
     async fn save_note(&self, note: InsertNoteEntity) -> Result<NoteEntity>;
 
     async fn get_notes(&self, user: &UserEntity) -> Result<Vec<NoteEntity>>;

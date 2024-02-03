@@ -42,17 +42,6 @@ pub struct InsertMessageEntity {
     pub tx_msg_id: i64,
 }
 
-#[derive(Queryable, Selectable, AsChangeset, Identifiable, Clone)]
-#[diesel(table_name = messages)]
-pub struct MessageEntity {
-    pub id: i32,
-    pub user_id: i32,
-    pub type_: i16,
-    pub rx_msg_id: i64,
-    pub rx_msg: String,
-    pub tx_msg_id: i64,
-}
-
 impl InsertMessageEntity {
     pub fn incoming(user: &UserEntity, rx: &Message, tx_id: MessageId) -> InsertMessageEntity {
         InsertMessageEntity {
@@ -75,6 +64,22 @@ impl InsertMessageEntity {
     }
 }
 
+#[derive(Queryable, Selectable, AsChangeset, Identifiable, Clone)]
+#[diesel(table_name = messages)]
+pub struct MessageEntity {
+    pub id: i32,
+    pub user_id: i32,
+    pub type_: i16,
+    pub rx_msg_id: i64,
+    pub rx_msg: String,
+    pub tx_msg_id: i64,
+}
+
+impl MessageEntity {
+    pub fn rx_message(&self) -> Result<Message, serde_json::Error> {
+        serde_json::from_str(&self.rx_msg)
+    }
+}
 
 #[derive(Insertable)]
 #[diesel(table_name = notes)]
