@@ -12,6 +12,8 @@ pub enum CommonMessages {
         last_name: Option<String>,
         lang: Option<String>,
     },
+    Welcome,
+    Faq,
 }
 
 impl LocKey for CommonMessages {
@@ -20,7 +22,9 @@ impl LocKey for CommonMessages {
             CommonMessages::VoiceMessagesNotSupported => "common.voiceMessagesNotSupported",
             CommonMessages::PollsNotSupported => "common.pollsNotSupported",
             CommonMessages::GamesNotSupported => "common.gamesNotSupported",
-            CommonMessages::InfoHeader { .. } => "common.infoHeader"
+            CommonMessages::InfoHeader { .. } => "common.infoHeader",
+            CommonMessages::Welcome => "common.welcome",
+            CommonMessages::Faq => "common.faq",
         }.to_string()
     }
 
@@ -30,6 +34,8 @@ impl LocKey for CommonMessages {
             CommonMessages::GamesNotSupported => "Games not supported".to_string(),
             CommonMessages::PollsNotSupported => "Polls not supported".to_string(),
             CommonMessages::InfoHeader { .. } => "<b><a href=\"tg://user?id={id}\">{first_name} {last_name}</a></b>\n<b>Language: </b> {lang}\n".to_string(),
+            CommonMessages::Welcome => "Welcome to support chat! Ask your questions here".to_string(),
+            CommonMessages::Faq => "To contact support, send your message, video or file. You will receive support answer in this chat".to_string(),
         }
     }
 
@@ -38,6 +44,9 @@ impl LocKey for CommonMessages {
             CommonMessages::VoiceMessagesNotSupported => None,
             CommonMessages::PollsNotSupported => None,
             CommonMessages::GamesNotSupported => None,
+            CommonMessages::Welcome => None,
+            CommonMessages::Faq => None,
+
             CommonMessages::InfoHeader { last_name, id, lang, first_name } => Some(vec![
                 ("id".to_string(), id.to_string()),
                 ("first_name".to_string(), sanitize(first_name.unwrap_or_default())),

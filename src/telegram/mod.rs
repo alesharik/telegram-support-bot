@@ -2,8 +2,9 @@ mod utils;
 
 use std::sync::Arc;
 use serde::Deserialize;
+use teloxide::macros::BotCommands;
 use teloxide::prelude::*;
-use teloxide::types::{InputFile, MediaKind, MessageId, MessageKind, ParseMode};
+use teloxide::types::{BotCommandScope, InputFile, MediaKind, MessageId, MessageKind, ParseMode};
 use crate::database::{Database, InsertMessageEntity, InsertUserEntity, UserEntity};
 use crate::localization::{CommonMessages, LocalizationBundle};
 use crate::telegram::utils::MessageBuilder;
@@ -17,14 +18,35 @@ pub struct TelegramConfig {
 
 type HandlerResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
+
+#[derive(BotCommands, Clone)]
+#[command(rename_rule = "lowercase", description = "These commands are supported:")]
+enum UserCommand {
+    #[command(description = "display this text.")]
+    Help,
+    #[command(description = "print welcome message.")]
+    Start,
+    #[command(description = "show FAQ.")]
+    Faq,
+}
+
+
 pub async fn run(config: TelegramConfig, db: Box<dyn Database + 'static>, loc: LocalizationBundle) -> anyhow::Result<()> {
+    use teloxide::utils::command::BotCommands;
+
     let bot = Bot::new(config.token.clone());
+
+    bot.set_my_commands(UserCommand::bot_commands())
+        .scope(BotCommandScope::AllPrivateChats)
+        .await?;
 
     let superchat = ChatId(config.superchat);
     Dispatcher::builder(
         bot,
         Update::filter_message()
-            .branch(dptree::filter(|m: Message| { m.chat.is_private() }).endpoint(user_msg))
+            .branch(dptree::filter(|m: Message| { m.chat.is_private() })
+                .branch(Update::filter_message().filter_command::<UserCommand>().endpoint(user_cmd))
+                .branch(Update::filter_message()).endpoint(user_msg))
             .branch(dptree::filter(move |m: Message| { m.chat.id == superchat }).endpoint(superchat_msg))
     )
         .dependencies(dptree::deps![config, Arc::new(db), Arc::new(loc)])
@@ -37,7 +59,7 @@ pub async fn run(config: TelegramConfig, db: Box<dyn Database + 'static>, loc: L
 
 async fn update_user_info_msg(bot: &Bot, user_msg: &Message, mut entity: UserEntity, cfg: TelegramConfig, db: Arc<Box<dyn Database>>, loc: Arc<LocalizationBundle>) -> Result<UserEntity, Box<dyn std::error::Error + Send + Sync>> {
     let bot = bot.parse_mode(ParseMode::Html);
-    let header = loc.localize(user_msg.from().and_then(|u| u.language_code.clone()), CommonMessages::InfoHeader {
+    let header = loc.localize(None, CommonMessages::InfoHeader {
         lang: user_msg.from().and_then(|u| u.language_code.clone()),
         last_name: user_msg.chat.last_name().map(|s| s.to_string()),
         first_name: user_msg.chat.first_name().map(|s| s.to_string()),
@@ -55,6 +77,18 @@ async fn update_user_info_msg(bot: &Bot, user_msg: &Message, mut entity: UserEnt
         db.update_user(entity.clone()).await?;
         Ok(entity)
     }
+}
+
+async fn user_cmd(bot: Bot, msg: Message, loc: Arc<LocalizationBundle>, cmd: UserCommand) -> HandlerResult {
+    use teloxide::utils::command::BotCommands;
+
+    let user_lang = msg.from().and_then(|u| u.language_code.clone());
+    match cmd {
+        UserCommand::Help => bot.send_message(msg.chat.id, UserCommand::descriptions().to_string()).await?,
+        UserCommand::Start => bot.send_message(msg.chat.id, loc.localize(user_lang, CommonMessages::Welcome)).await?,
+        UserCommand::Faq => bot.send_message(msg.chat.id, loc.localize(user_lang, CommonMessages::Faq)).await?,
+    };
+    Ok(())
 }
 
 async fn user_msg(bot: Bot, msg: Message, cfg: TelegramConfig, db: Arc<Box<dyn Database>>, loc: Arc<LocalizationBundle>) -> HandlerResult {
