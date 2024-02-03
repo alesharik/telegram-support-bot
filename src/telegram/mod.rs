@@ -4,7 +4,7 @@ use std::sync::Arc;
 use serde::Deserialize;
 use teloxide::prelude::*;
 use teloxide::types::{InputFile, MediaKind, MessageKind};
-use crate::database::{Database, InsertUserEntity, UserEntity};
+use crate::database::{Database, InsertUserEntity};
 use crate::localization::{CommonMessages, LocalizationBundle};
 use crate::telegram::utils::MessageBuilder;
 
