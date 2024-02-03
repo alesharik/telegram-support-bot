@@ -51,8 +51,11 @@ impl super::Database for SqliteDatabase {
     }
 
     async fn update_user(&self, user: UserEntity) -> crate::database::Result<()> {
+        use crate::schema::users::{id};
+
         let mut conn = self.conn.lock().await;
         diesel::update(users::table())
+            .filter(id.eq(user.id))
             .set(user)
             .execute(&mut *conn)?;
         Ok(())
@@ -78,7 +81,7 @@ impl super::Database for SqliteDatabase {
     }
 
     async fn save_note(&self, note: InsertNoteEntity) -> crate::database::Result<NoteEntity> {
-        use crate::schema::notes::{user_id, key};
+        use crate::schema::notes::{user_id, id, key};
 
         let mut conn = self.conn.lock().await;
         let existing: Option<NoteEntity> = notes.select(NoteEntity::as_select())
@@ -95,6 +98,7 @@ impl super::Database for SqliteDatabase {
             Some(mut entity) => {
                 entity.value = note.value;
                 diesel::update(notes::table())
+                    .filter(id.eq(entity.id))
                     .set(entity.clone())
                     .execute(&mut *conn)?;
                 entity
