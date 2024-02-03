@@ -4,7 +4,7 @@ use std::sync::Arc;
 use serde::Deserialize;
 use teloxide::prelude::*;
 use teloxide::types::{InputFile, MediaKind, MessageId, MessageKind, ParseMode};
-use crate::database::{Database, InsertUserEntity, UserEntity};
+use crate::database::{Database, InsertMessageEntity, InsertUserEntity, UserEntity};
 use crate::localization::{CommonMessages, LocalizationBundle};
 use crate::telegram::utils::MessageBuilder;
 
@@ -75,7 +75,7 @@ async fn user_msg(bot: Bot, msg: Message, cfg: TelegramConfig, db: Arc<Box<dyn D
             user
         },
     };
-    match msg.kind {
+    let tx = match msg.kind {
         MessageKind::Common(ref a) => match a.media_kind.clone() {
             MediaKind::Animation(obj) => {
                 MessageBuilder::new(bot.send_animation(ChatId(cfg.superchat), InputFile::file_id(obj.animation.file.id)))
@@ -84,7 +84,7 @@ async fn user_msg(bot: Bot, msg: Message, cfg: TelegramConfig, db: Arc<Box<dyn D
                     .caption_entities(obj.caption_entities)
                     .has_spoiler(obj.has_media_spoiler)
                     .message_thread_id(user.topic as i32)
-                    .await?;
+                    .await?
             }
             MediaKind::Audio(audio) => {
                 MessageBuilder::new(bot.send_audio(ChatId(cfg.superchat), InputFile::file_id(audio.audio.file.id)))
@@ -92,7 +92,7 @@ async fn user_msg(bot: Bot, msg: Message, cfg: TelegramConfig, db: Arc<Box<dyn D
                     .build()
                     .caption_entities(audio.caption_entities)
                     .message_thread_id(user.topic as i32)
-                    .await?;
+                    .await?
             }
             MediaKind::Contact(contact) => {
                 MessageBuilder::new(bot.send_contact(ChatId(cfg.superchat), contact.contact.phone_number, contact.contact.first_name))
@@ -100,7 +100,7 @@ async fn user_msg(bot: Bot, msg: Message, cfg: TelegramConfig, db: Arc<Box<dyn D
                     .with(contact.contact.vcard, |o, v| v.vcard(o))
                     .build()
                     .message_thread_id(user.topic as i32)
-                    .await?;
+                    .await?
             }
             MediaKind::Document(doc) => {
                 MessageBuilder::new(bot.send_document(ChatId(cfg.superchat), InputFile::file_id(doc.document.file.id)))
@@ -108,7 +108,7 @@ async fn user_msg(bot: Bot, msg: Message, cfg: TelegramConfig, db: Arc<Box<dyn D
                     .build()
                     .caption_entities(doc.caption_entities)
                     .message_thread_id(user.topic as i32)
-                    .await?;
+                    .await?
             }
             MediaKind::Venue(v) => {
                 MessageBuilder::new(bot.send_venue(ChatId(cfg.superchat), v.venue.location.latitude, v.venue.location.longitude, v.venue.title, v.venue.address))
@@ -118,7 +118,7 @@ async fn user_msg(bot: Bot, msg: Message, cfg: TelegramConfig, db: Arc<Box<dyn D
                     .with(v.venue.google_place_type, |o, v| v.google_place_type(o))
                     .build()
                     .message_thread_id(user.topic as i32)
-                    .await?;
+                    .await?
             }
             MediaKind::Location(loc) => {
                 MessageBuilder::new(bot.send_location(ChatId(cfg.superchat), loc.location.latitude, loc.location.longitude))
@@ -128,7 +128,7 @@ async fn user_msg(bot: Bot, msg: Message, cfg: TelegramConfig, db: Arc<Box<dyn D
                     .with(loc.location.proximity_alert_radius, |o, v| v.proximity_alert_radius(o))
                     .build()
                     .message_thread_id(user.topic as i32)
-                    .await?;
+                    .await?
             }
             MediaKind::Photo(p) => {
                 let Some(photo) = p.photo.iter().max_by_key(|a| a.width * a.height) else {
@@ -139,18 +139,18 @@ async fn user_msg(bot: Bot, msg: Message, cfg: TelegramConfig, db: Arc<Box<dyn D
                     .build()
                     .caption_entities(p.caption_entities)
                     .message_thread_id(user.topic as i32)
-                    .await?;
+                    .await?
             }
             MediaKind::Sticker(s) => {
                 bot.send_sticker(ChatId(cfg.superchat), InputFile::file_id(s.sticker.file.id))
                     .message_thread_id(user.topic as i32)
-                    .await?;
+                    .await?
             }
             MediaKind::Text(t) => {
                 bot.send_message(ChatId(cfg.superchat), t.text)
                     .entities(t.entities)
                     .message_thread_id(user.topic as i32)
-                    .await?;
+                    .await?
             }
             MediaKind::Video(v) => {
                 MessageBuilder::new(bot.send_video(ChatId(cfg.superchat), InputFile::file_id(v.video.file.id)))
@@ -159,29 +159,33 @@ async fn user_msg(bot: Bot, msg: Message, cfg: TelegramConfig, db: Arc<Box<dyn D
                     .caption_entities(v.caption_entities)
                     .has_spoiler(v.has_media_spoiler)
                     .message_thread_id(user.topic as i32)
-                    .await?;
+                    .await?
             }
             MediaKind::VideoNote(v) => {
                 bot.send_video_note(ChatId(cfg.superchat), InputFile::file_id(v.video_note.file.id))
                     .length(v.video_note.length)
                     .duration(v.video_note.duration)
                     .message_thread_id(user.topic as i32)
-                    .await?;
+                    .await?
             }
 
             MediaKind::Game(_) => {
                 bot.send_message(msg.chat.id, loc.localize(msg.from().and_then(|u| u.language_code.clone()), CommonMessages::GamesNotSupported)).await?;
+                return Ok(());
             }
             MediaKind::Poll(_) => {
                 bot.send_message(msg.chat.id, loc.localize(msg.from().and_then(|u| u.language_code.clone()), CommonMessages::PollsNotSupported)).await?;
+                return Ok(());
             }
             MediaKind::Voice(_) => {
                 bot.send_message(msg.chat.id, loc.localize(msg.from().and_then(|u| u.language_code.clone()), CommonMessages::VoiceMessagesNotSupported)).await?;
+                return Ok(());
             }
             _ => return Ok(())
         }
         _ => return Ok(())
-    }
+    };
+    db.insert_message(InsertMessageEntity::incoming(&user, &msg, tx.id)).await?;
     Ok(())
 }
 
@@ -193,7 +197,7 @@ async fn superchat_msg(bot: Bot, msg: Message, db: Arc<Box<dyn Database>>, loc: 
         return Ok(());
     };
     let uid = UserId(user.telegram_id as u64);
-    match msg.kind {
+    let tx = match msg.kind {
         MessageKind::Common(ref a) => match a.media_kind.clone() {
             MediaKind::Animation(obj) => {
                 MessageBuilder::new(bot.send_animation(uid, InputFile::file_id(obj.animation.file.id)))
@@ -201,28 +205,28 @@ async fn superchat_msg(bot: Bot, msg: Message, db: Arc<Box<dyn Database>>, loc: 
                     .build()
                     .caption_entities(obj.caption_entities)
                     .has_spoiler(obj.has_media_spoiler)
-                    .await?;
+                    .await?
             }
             MediaKind::Audio(audio) => {
                 MessageBuilder::new(bot.send_audio(uid, InputFile::file_id(audio.audio.file.id)))
                     .with(audio.caption, |o, v| v.caption(o))
                     .build()
                     .caption_entities(audio.caption_entities)
-                    .await?;
+                    .await?
             }
             MediaKind::Contact(contact) => {
                 MessageBuilder::new(bot.send_contact(uid, contact.contact.phone_number, contact.contact.first_name))
                     .with(contact.contact.last_name, |o, v| v.last_name(o))
                     .with(contact.contact.vcard, |o, v| v.vcard(o))
                     .build()
-                    .await?;
+                    .await?
             }
             MediaKind::Document(doc) => {
                 MessageBuilder::new(bot.send_document(uid, InputFile::file_id(doc.document.file.id)))
                     .with(doc.caption, |o, v| v.caption(o))
                     .build()
                     .caption_entities(doc.caption_entities)
-                    .await?;
+                    .await?
             }
             MediaKind::Venue(v) => {
                 MessageBuilder::new(bot.send_venue(uid, v.venue.location.latitude, v.venue.location.longitude, v.venue.title, v.venue.address))
@@ -231,7 +235,7 @@ async fn superchat_msg(bot: Bot, msg: Message, db: Arc<Box<dyn Database>>, loc: 
                     .with(v.venue.google_place_id, |o, v| v.google_place_id(o))
                     .with(v.venue.google_place_type, |o, v| v.google_place_type(o))
                     .build()
-                    .await?;
+                    .await?
             }
             MediaKind::Location(loc) => {
                 MessageBuilder::new(bot.send_location(uid, loc.location.latitude, loc.location.longitude))
@@ -240,7 +244,7 @@ async fn superchat_msg(bot: Bot, msg: Message, db: Arc<Box<dyn Database>>, loc: 
                     .with(loc.location.heading, |o, v| v.heading(o))
                     .with(loc.location.proximity_alert_radius, |o, v| v.proximity_alert_radius(o))
                     .build()
-                    .await?;
+                    .await?
             }
             MediaKind::Photo(p) => {
                 let Some(photo) = p.photo.iter().max_by_key(|a| a.width * a.height) else {
@@ -250,16 +254,16 @@ async fn superchat_msg(bot: Bot, msg: Message, db: Arc<Box<dyn Database>>, loc: 
                     .with(p.caption, |o, v| v.caption(o))
                     .build()
                     .caption_entities(p.caption_entities)
-                    .await?;
+                    .await?
             }
             MediaKind::Sticker(s) => {
                 bot.send_sticker(uid, InputFile::file_id(s.sticker.file.id))
-                    .await?;
+                    .await?
             }
             MediaKind::Text(t) => {
                 bot.send_message(uid, t.text)
                     .entities(t.entities)
-                    .await?;
+                    .await?
             }
             MediaKind::Video(v) => {
                 MessageBuilder::new(bot.send_video(uid, InputFile::file_id(v.video.file.id)))
@@ -267,27 +271,31 @@ async fn superchat_msg(bot: Bot, msg: Message, db: Arc<Box<dyn Database>>, loc: 
                     .build()
                     .caption_entities(v.caption_entities)
                     .has_spoiler(v.has_media_spoiler)
-                    .await?;
+                    .await?
             }
             MediaKind::VideoNote(v) => {
                 bot.send_video_note(uid, InputFile::file_id(v.video_note.file.id))
                     .length(v.video_note.length)
                     .duration(v.video_note.duration)
-                    .await?;
+                    .await?
             }
 
             MediaKind::Game(_) => {
                 bot.send_message(msg.chat.id, loc.localize(msg.from().and_then(|u| u.language_code.clone()), CommonMessages::GamesNotSupported)).await?;
+                return Ok(());
             }
             MediaKind::Poll(_) => {
                 bot.send_message(msg.chat.id, loc.localize(msg.from().and_then(|u| u.language_code.clone()), CommonMessages::PollsNotSupported)).await?;
+                return Ok(());
             }
             MediaKind::Voice(_) => {
                 bot.send_message(msg.chat.id, loc.localize(msg.from().and_then(|u| u.language_code.clone()), CommonMessages::VoiceMessagesNotSupported)).await?;
+                return Ok(());
             }
             _ => return Ok(())
         }
         _ => return Ok(())
-    }
+    };
+    db.insert_message(InsertMessageEntity::outgoing(&user, &msg, tx.id)).await?;
     Ok(())
 }

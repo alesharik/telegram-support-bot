@@ -4,9 +4,10 @@ use diesel::associations::HasTable;
 use teloxide::prelude::UserId;
 use tokio::sync::Mutex;
 use diesel::ExpressionMethods;
-use super::{InsertUserEntity, UserEntity};
+use super::{InsertMessageEntity, InsertUserEntity, MessageEntity, UserEntity};
 use crate::schema::users::dsl::users;
 use crate::schema::users::{telegram_id, topic};
+use crate::schema::messages::dsl::messages;
 
 pub struct SqliteDatabase {
     conn: Mutex<SqliteConnection>,
@@ -53,5 +54,12 @@ impl super::Database for SqliteDatabase {
             .set(user)
             .execute(&mut *conn)?;
         Ok(())
+    }
+
+    async fn insert_message(&self, message: InsertMessageEntity) -> crate::database::Result<MessageEntity> {
+        let mut conn = self.conn.lock().await;
+        Ok(diesel::insert_into(messages::table())
+            .values(&message)
+            .get_result(&mut *conn)?)
     }
 }
