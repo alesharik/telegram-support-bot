@@ -33,3 +33,5 @@ superchat = "staff superchat"
 ### TODO
 - [ ] sync reactions between chats
 - [ ] documentation
+- [ ] full testing
+- [ ] wait for teloxide releases with changes
