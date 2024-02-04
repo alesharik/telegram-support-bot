@@ -13,7 +13,6 @@ use crate::telegram::utils::MessageBuilder;
 pub struct TelegramConfig {
     pub token: String,
     pub superchat: i64,
-    pub managers: Vec<i64>,
 }
 
 type HandlerResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
