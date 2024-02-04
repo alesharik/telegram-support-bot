@@ -276,6 +276,14 @@ async fn user_msg(bot: Bot, msg: Message, cfg: TelegramConfig, db: Arc<Box<dyn D
                     .message_thread_id(ThreadId(MessageId(user.topic as i32)))
                     .await?
             }
+            MediaKind::Voice(v) => {
+                MessageBuilder::new(bot.send_voice(ChatId(cfg.superchat), InputFile::file_id(v.voice.file.id)))
+                    .with(v.caption, |c, v| v.caption(c))
+                    .build()
+                    .caption_entities(v.caption_entities)
+                    .message_thread_id(ThreadId(MessageId(user.topic as i32)))
+                    .await?
+            }
 
             MediaKind::Game(_) => {
                 bot.send_message(msg.chat.id, loc.localize(msg.from().and_then(|u| u.language_code.clone()), CommonMessages::GamesNotSupported)).await?;
@@ -283,10 +291,6 @@ async fn user_msg(bot: Bot, msg: Message, cfg: TelegramConfig, db: Arc<Box<dyn D
             }
             MediaKind::Poll(_) => {
                 bot.send_message(msg.chat.id, loc.localize(msg.from().and_then(|u| u.language_code.clone()), CommonMessages::PollsNotSupported)).await?;
-                return Ok(());
-            }
-            MediaKind::Voice(_) => {
-                bot.send_message(msg.chat.id, loc.localize(msg.from().and_then(|u| u.language_code.clone()), CommonMessages::VoiceMessagesNotSupported)).await?;
                 return Ok(());
             }
             _ => return Ok(())
@@ -388,6 +392,13 @@ async fn superchat_msg(bot: Bot, msg: Message, db: Arc<Box<dyn Database>>, loc: 
                     .duration(v.video_note.duration.seconds())
                     .await?
             }
+            MediaKind::Voice(v) => {
+                MessageBuilder::new(bot.send_voice(uid, InputFile::file_id(v.voice.file.id)))
+                    .with(v.caption, |c, v| v.caption(c))
+                    .build()
+                    .caption_entities(v.caption_entities)
+                    .await?
+            }
 
             MediaKind::Game(_) => {
                 bot.send_message(msg.chat.id, loc.localize(msg.from().and_then(|u| u.language_code.clone()), CommonMessages::GamesNotSupported)).await?;
@@ -395,10 +406,6 @@ async fn superchat_msg(bot: Bot, msg: Message, db: Arc<Box<dyn Database>>, loc: 
             }
             MediaKind::Poll(_) => {
                 bot.send_message(msg.chat.id, loc.localize(msg.from().and_then(|u| u.language_code.clone()), CommonMessages::PollsNotSupported)).await?;
-                return Ok(());
-            }
-            MediaKind::Voice(_) => {
-                bot.send_message(msg.chat.id, loc.localize(msg.from().and_then(|u| u.language_code.clone()), CommonMessages::VoiceMessagesNotSupported)).await?;
                 return Ok(());
             }
             _ => return Ok(())

@@ -3,7 +3,6 @@ use crate::localization::{LocKey, sanitize};
 
 #[derive(Clone)]
 pub enum CommonMessages {
-    VoiceMessagesNotSupported,
     PollsNotSupported,
     GamesNotSupported,
     InfoHeader {
@@ -20,7 +19,6 @@ pub enum CommonMessages {
 impl LocKey for CommonMessages {
     fn key(&self) -> String {
         match self {
-            CommonMessages::VoiceMessagesNotSupported => "common.voiceMessagesNotSupported",
             CommonMessages::PollsNotSupported => "common.pollsNotSupported",
             CommonMessages::GamesNotSupported => "common.gamesNotSupported",
             CommonMessages::InfoHeader { .. } => "common.infoHeader",
@@ -32,7 +30,6 @@ impl LocKey for CommonMessages {
 
     fn default_message(&self) -> String {
         match self {
-            CommonMessages::VoiceMessagesNotSupported => "Voice messages not supported".to_string(),
             CommonMessages::GamesNotSupported => "Games not supported".to_string(),
             CommonMessages::PollsNotSupported => "Polls not supported".to_string(),
             CommonMessages::InfoHeader { .. } => "<b><a href=\"tg://user?id={id}\">{first_name} {last_name}</a></b>\n<b>Language: </b> {lang}\n".to_string(),
@@ -44,7 +41,6 @@ impl LocKey for CommonMessages {
 
     fn args(self) -> Option<Vec<(String, String)>> {
         match self {
-            CommonMessages::VoiceMessagesNotSupported => None,
             CommonMessages::PollsNotSupported => None,
             CommonMessages::GamesNotSupported => None,
             CommonMessages::Welcome => None,
