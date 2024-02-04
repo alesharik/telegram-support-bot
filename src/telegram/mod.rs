@@ -4,7 +4,7 @@ use std::sync::Arc;
 use serde::Deserialize;
 use teloxide::macros::BotCommands;
 use teloxide::prelude::*;
-use teloxide::types::{BotCommandScope, InputFile, MediaKind, MessageId, MessageKind, ParseMode, Recipient};
+use teloxide::types::{BotCommandScope, InputFile, MediaKind, MessageId, MessageKind, ParseMode, ReactionEmoji, ReactionType, Recipient, ThreadId};
 use crate::database::{Database, InsertMessageEntity, InsertNoteEntity, InsertUserEntity, MessageType, UserEntity};
 use crate::localization::{CommonMessages, LocalizationBundle, sanitize};
 use crate::telegram::utils::MessageBuilder;
@@ -101,7 +101,7 @@ async fn update_user_info_msg(bot: &Bot, mut entity: UserEntity, cfg: TelegramCo
             .await?;
         Ok(entity)
     } else {
-        let msg = bot.send_message(ChatId(cfg.superchat), &msg).message_thread_id(entity.topic as i32).await?;
+        let msg = bot.send_message(ChatId(cfg.superchat), &msg).message_thread_id(ThreadId(MessageId(entity.topic as i32))).await?;
         bot.pin_chat_message(ChatId(cfg.superchat), msg.id).await?;
         entity.info_message = Some(msg.id.0 as i64);
         db.update_user(entity.clone()).await?;
@@ -125,7 +125,7 @@ async fn superchat_cmd(bot: Bot, msg: Message, loc: Arc<LocalizationBundle>, cfg
     let Some(topic) = msg.thread_id else {
         return Ok(());
     };
-    let Some(user) = db.get_user_by_topic(topic as i64).await? else {
+    let Some(user) = db.get_user_by_topic(topic.0.0 as i64).await? else {
         return Ok(());
     };
 
@@ -166,14 +166,14 @@ async fn user_msg(bot: Bot, msg: Message, cfg: TelegramConfig, db: Arc<Box<dyn D
             let topic = bot.create_forum_topic(ChatId(cfg.superchat), name, 16766590, "").await?;
             let entity = InsertUserEntity {
                 telegram_id: msg.chat.id.0,
-                topic: topic.message_thread_id as i64,
+                topic: topic.thread_id.0.0 as i64,
                 info_message: None,
                 first_name: msg.chat.first_name().map(|s| s.to_string()),
                 last_name: msg.chat.last_name().map(|s| s.to_string()),
                 lang_code: msg.from().and_then(|l| l.language_code.clone()),
             };
             let en = db.insert_user(entity).await?;
-            bot.edit_forum_topic(ChatId(cfg.superchat), topic.message_thread_id)
+            bot.edit_forum_topic(ChatId(cfg.superchat), topic.thread_id)
                 .name(format!("#T{:#06} {} {}", en.id, msg.chat.first_name().unwrap_or(""), msg.chat.last_name().unwrap_or("")))
                 .await?;
             update_user_info_msg(&bot, en, cfg.clone(), db.clone(), loc.clone()).await?
@@ -192,7 +192,7 @@ async fn user_msg(bot: Bot, msg: Message, cfg: TelegramConfig, db: Arc<Box<dyn D
                     .build()
                     .caption_entities(obj.caption_entities)
                     .has_spoiler(obj.has_media_spoiler)
-                    .message_thread_id(user.topic as i32)
+                    .message_thread_id(ThreadId(MessageId(user.topic as i32)))
                     .await?
             }
             MediaKind::Audio(audio) => {
@@ -200,7 +200,7 @@ async fn user_msg(bot: Bot, msg: Message, cfg: TelegramConfig, db: Arc<Box<dyn D
                     .with(audio.caption, |o, v| v.caption(o))
                     .build()
                     .caption_entities(audio.caption_entities)
-                    .message_thread_id(user.topic as i32)
+                    .message_thread_id(ThreadId(MessageId(user.topic as i32)))
                     .await?
             }
             MediaKind::Contact(contact) => {
@@ -208,7 +208,7 @@ async fn user_msg(bot: Bot, msg: Message, cfg: TelegramConfig, db: Arc<Box<dyn D
                     .with(contact.contact.last_name, |o, v| v.last_name(o))
                     .with(contact.contact.vcard, |o, v| v.vcard(o))
                     .build()
-                    .message_thread_id(user.topic as i32)
+                    .message_thread_id(ThreadId(MessageId(user.topic as i32)))
                     .await?
             }
             MediaKind::Document(doc) => {
@@ -216,7 +216,7 @@ async fn user_msg(bot: Bot, msg: Message, cfg: TelegramConfig, db: Arc<Box<dyn D
                     .with(doc.caption, |o, v| v.caption(o))
                     .build()
                     .caption_entities(doc.caption_entities)
-                    .message_thread_id(user.topic as i32)
+                    .message_thread_id(ThreadId(MessageId(user.topic as i32)))
                     .await?
             }
             MediaKind::Venue(v) => {
@@ -226,17 +226,17 @@ async fn user_msg(bot: Bot, msg: Message, cfg: TelegramConfig, db: Arc<Box<dyn D
                     .with(v.venue.google_place_id, |o, v| v.google_place_id(o))
                     .with(v.venue.google_place_type, |o, v| v.google_place_type(o))
                     .build()
-                    .message_thread_id(user.topic as i32)
+                    .message_thread_id(ThreadId(MessageId(user.topic as i32)))
                     .await?
             }
             MediaKind::Location(loc) => {
                 MessageBuilder::new(bot.send_location(ChatId(cfg.superchat), loc.location.latitude, loc.location.longitude))
                     .with(loc.location.horizontal_accuracy, |o, v| v.horizontal_accuracy(o))
-                    .with(loc.location.live_period, |o, v| v.live_period(o))
+                    .with(loc.location.live_period, |o, v| v.live_period(o.seconds()))
                     .with(loc.location.heading, |o, v| v.heading(o))
                     .with(loc.location.proximity_alert_radius, |o, v| v.proximity_alert_radius(o))
                     .build()
-                    .message_thread_id(user.topic as i32)
+                    .message_thread_id(ThreadId(MessageId(user.topic as i32)))
                     .await?
             }
             MediaKind::Photo(p) => {
@@ -247,18 +247,18 @@ async fn user_msg(bot: Bot, msg: Message, cfg: TelegramConfig, db: Arc<Box<dyn D
                     .with(p.caption, |o, v| v.caption(o))
                     .build()
                     .caption_entities(p.caption_entities)
-                    .message_thread_id(user.topic as i32)
+                    .message_thread_id(ThreadId(MessageId(user.topic as i32)))
                     .await?
             }
             MediaKind::Sticker(s) => {
                 bot.send_sticker(ChatId(cfg.superchat), InputFile::file_id(s.sticker.file.id))
-                    .message_thread_id(user.topic as i32)
+                    .message_thread_id(ThreadId(MessageId(user.topic as i32)))
                     .await?
             }
             MediaKind::Text(t) => {
                 bot.send_message(ChatId(cfg.superchat), t.text)
                     .entities(t.entities)
-                    .message_thread_id(user.topic as i32)
+                    .message_thread_id(ThreadId(MessageId(user.topic as i32)))
                     .await?
             }
             MediaKind::Video(v) => {
@@ -267,14 +267,14 @@ async fn user_msg(bot: Bot, msg: Message, cfg: TelegramConfig, db: Arc<Box<dyn D
                     .build()
                     .caption_entities(v.caption_entities)
                     .has_spoiler(v.has_media_spoiler)
-                    .message_thread_id(user.topic as i32)
+                    .message_thread_id(ThreadId(MessageId(user.topic as i32)))
                     .await?
             }
             MediaKind::VideoNote(v) => {
                 bot.send_video_note(ChatId(cfg.superchat), InputFile::file_id(v.video_note.file.id))
                     .length(v.video_note.length)
-                    .duration(v.video_note.duration)
-                    .message_thread_id(user.topic as i32)
+                    .duration(v.video_note.duration.seconds())
+                    .message_thread_id(ThreadId(MessageId(user.topic as i32)))
                     .await?
             }
 
@@ -303,7 +303,7 @@ async fn superchat_msg(bot: Bot, msg: Message, db: Arc<Box<dyn Database>>, loc: 
     let Some(topic) = msg.thread_id else {
         return Ok(());
     };
-    let Some(user) = db.get_user_by_topic(topic as i64).await? else {
+    let Some(user) = db.get_user_by_topic(topic.0.0 as i64).await? else {
         return Ok(());
     };
     let uid = UserId(user.telegram_id as u64);
@@ -350,7 +350,7 @@ async fn superchat_msg(bot: Bot, msg: Message, db: Arc<Box<dyn Database>>, loc: 
             MediaKind::Location(loc) => {
                 MessageBuilder::new(bot.send_location(uid, loc.location.latitude, loc.location.longitude))
                     .with(loc.location.horizontal_accuracy, |o, v| v.horizontal_accuracy(o))
-                    .with(loc.location.live_period, |o, v| v.live_period(o))
+                    .with(loc.location.live_period, |o, v| v.live_period(o.seconds()))
                     .with(loc.location.heading, |o, v| v.heading(o))
                     .with(loc.location.proximity_alert_radius, |o, v| v.proximity_alert_radius(o))
                     .build()
@@ -386,7 +386,7 @@ async fn superchat_msg(bot: Bot, msg: Message, db: Arc<Box<dyn Database>>, loc: 
             MediaKind::VideoNote(v) => {
                 bot.send_video_note(uid, InputFile::file_id(v.video_note.file.id))
                     .length(v.video_note.length)
-                    .duration(v.video_note.duration)
+                    .duration(v.video_note.duration.seconds())
                     .await?
             }
 
@@ -407,6 +407,7 @@ async fn superchat_msg(bot: Bot, msg: Message, db: Arc<Box<dyn Database>>, loc: 
         _ => return Ok(())
     };
     db.insert_message(InsertMessageEntity::outgoing(&user, &msg, tx.id)).await?;
+    bot.set_message_reaction(msg.chat.id, msg.id, vec![ReactionType::Emoji { emoji: ReactionEmoji::Lightning }]).await?;
     Ok(())
 }
 
@@ -443,7 +444,7 @@ async fn superchat_update(bot: Bot, edited: Message, db: Arc<Box<dyn Database>>,
     let Some(topic) = edited.thread_id else {
         return Ok(());
     };
-    let Some(user) = db.get_user_by_topic(topic as i64).await? else {
+    let Some(user) = db.get_user_by_topic(topic.0.0 as i64).await? else {
         return Ok(());
     };
     let Some(msg) = db.get_message(&user, MessageType::Outgoing, edited.id.0 as i64).await? else {

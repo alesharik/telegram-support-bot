@@ -24,4 +24,4 @@ metrics = "0.22.0"
 metrics-util = "0.15.0"
 metrics-exporter-prometheus = { version = "0.12.1", features = ["http-listener"] }
 
-teloxide = { version = "0.12", features = ["macros"] }
+teloxide = { git = "https://github.com/alesharik/teloxide.git", features = ["macros"] }
