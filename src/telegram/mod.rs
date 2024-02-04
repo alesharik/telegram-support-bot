@@ -407,7 +407,7 @@ async fn superchat_msg(bot: Bot, msg: Message, db: Arc<Box<dyn Database>>, loc: 
         _ => return Ok(())
     };
     db.insert_message(InsertMessageEntity::outgoing(&user, &msg, tx.id)).await?;
-    bot.set_message_reaction(msg.chat.id, msg.id, vec![ReactionType::Emoji { emoji: ReactionEmoji::Lightning }]).await?;
+    bot.set_message_reaction(msg.chat.id, msg.id, vec![ReactionType::emoji(ReactionEmoji::Lightning)]).await?;
     Ok(())
 }
 
