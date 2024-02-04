@@ -295,6 +295,7 @@ async fn user_msg(bot: Bot, msg: Message, cfg: TelegramConfig, db: Arc<Box<dyn D
         _ => return Ok(())
     };
     db.insert_message(InsertMessageEntity::incoming(&user, &msg, tx.id)).await?;
+    bot.send_message(msg.chat.id, loc.localize(msg.from().and_then(|l| l.language_code.clone()), CommonMessages::UserReply)).await?;
     Ok(())
 }
 

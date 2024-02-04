@@ -14,6 +14,7 @@ pub enum CommonMessages {
     },
     Welcome,
     Faq,
+    UserReply,
 }
 
 impl LocKey for CommonMessages {
@@ -25,6 +26,7 @@ impl LocKey for CommonMessages {
             CommonMessages::InfoHeader { .. } => "common.infoHeader",
             CommonMessages::Welcome => "common.welcome",
             CommonMessages::Faq => "common.faq",
+            CommonMessages::UserReply => "common.userReply",
         }.to_string()
     }
 
@@ -36,6 +38,7 @@ impl LocKey for CommonMessages {
             CommonMessages::InfoHeader { .. } => "<b><a href=\"tg://user?id={id}\">{first_name} {last_name}</a></b>\n<b>Language: </b> {lang}\n".to_string(),
             CommonMessages::Welcome => "Welcome to support chat! Ask your questions here".to_string(),
             CommonMessages::Faq => "To contact support, send your message, video or file. You will receive support answer in this chat".to_string(),
+            CommonMessages::UserReply => "Thank you for contacting us. We will answer as soon as possible.".to_string(),
         }
     }
 
@@ -46,6 +49,7 @@ impl LocKey for CommonMessages {
             CommonMessages::GamesNotSupported => None,
             CommonMessages::Welcome => None,
             CommonMessages::Faq => None,
+            CommonMessages::UserReply => None,
 
             CommonMessages::InfoHeader { last_name, id, lang, first_name } => Some(vec![
                 ("id".to_string(), id.to_string()),
